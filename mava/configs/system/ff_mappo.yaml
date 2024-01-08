@@ -1,7 +1,8 @@
 # --- Defaults FF-MAPPO ---
 
 num_updates: 1000 # Number of updates
-seed: 42
+seed: 43
+total_timesteps: 4096000 # Number of seconds before the training loop terminates.
 
 # --- Agent observations ---
 add_agent_id: True

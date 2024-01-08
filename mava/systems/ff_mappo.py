@@ -11,6 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# import os
+# import multiprocessing
+
+# os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count={}".format(
+#     4
+#     # multiprocessing.cpu_count()
+# )
+
 import copy
 import time
 from typing import Any, Dict, Sequence, Tuple
@@ -50,6 +59,7 @@ from mava.utils.checkpointing import Checkpointer
 from mava.utils.jax import merge_leading_dims
 from mava.utils.make_env import make
 
+print(f"Devices: {jax.devices()}")
 
 class Actor(nn.Module):
     """Actor Network."""
@@ -527,6 +537,12 @@ def run_experiment(_config: Dict) -> None:
     # Calculate total timesteps.
     n_devices = len(jax.devices())
     config["arch"]["devices"] = jax.devices()
+    config["system"]["num_updates"] = int(config ["system"]["total_timesteps"] 
+        / n_devices
+        / config["system"]["rollout_length"]
+        / config["system"]["update_batch_size"]
+        / config["arch"]["num_envs"]
+    )
     config["system"]["num_updates_per_eval"] = (
         config["system"]["num_updates"] // config["arch"]["num_evaluation"]
     )
@@ -537,7 +553,7 @@ def run_experiment(_config: Dict) -> None:
         * config["system"]["update_batch_size"]
         * config["arch"]["num_envs"]
     )
-    # Get total_timesteps
+    # Recalculate the true number of total timesteps for incase of calculation round off
     config["system"]["total_timesteps"] = (
         n_devices
         * config["system"]["num_updates"]

@@ -23,7 +23,7 @@ import neptune
 from colorama import Fore, Style
 from neptune.utils import stringify_unsupported
 from tensorboard_logger import configure, log_value
-
+from copy import deepcopy
 
 class Logger:
     """Logger class for logging to tensorboard, and neptune.
@@ -37,6 +37,9 @@ class Logger:
         """Initialise the logger."""
         self.console_logger = get_python_logger()
         self.unique_token = datetime.now().strftime("%Y%m%d%H%M%S")
+        if cfg["env"]["env_name"] == "HeuristicEnemySMAX":
+            cfg = deepcopy(cfg)
+            cfg["env"]["scenario"] = {"task_name": cfg["env"]["scenario"]}
 
         if cfg["logger"]["use_tf"]:
             self._setup_tb(cfg)
@@ -44,6 +47,7 @@ class Logger:
             self._setup_neptune(cfg)
         if cfg["logger"]["use_json"]:
             self._setup_json(cfg)
+
 
         self.use_tb = cfg["logger"]["use_tf"]
         self.use_neptune = cfg["logger"]["use_neptune"]
@@ -69,7 +73,8 @@ class Logger:
     def _setup_json(self, cfg: Dict) -> None:
         json_exp_path = get_experiment_path(cfg, "json")
         json_logs_path = os.path.join(
-            cfg["logger"]["base_exp_path"], f"{json_exp_path}/{self.unique_token}"
+            cfg["logger"]["base_exp_path"], f"{json_exp_path}"
+            # cfg["logger"]["base_exp_path"], f"{json_exp_path}/{self.unique_token}"
         )
 
         # if a custom path is specified, use that instead

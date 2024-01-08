@@ -113,7 +113,7 @@ def get_logger_tools(logger: Logger) -> LogFn:  # noqa: CCR001
                 f"Entropy {float(np.mean(entropy)):.3f}"
             )
             logger.console_logger.info(
-                f"{Fore.MAGENTA}{Style.BRIGHT}TRAINER: {log_string}{Style.RESET_ALL}"
+                f"{Fore.MAGENTA}{Style.BRIGHT}TRAINER:   {log_string}{Style.RESET_ALL}"
             )
         else:
             logger.console_logger.info(
