@@ -103,6 +103,15 @@ class Params(NamedTuple):
     critic_params: FrozenDict
 
 
+class EwmaParams(NamedTuple):
+    """Parameters of an actor critic network. Includes the EWMA parameters and the total weight used in the update."""
+
+    actor_params: FrozenDict
+    critic_params: FrozenDict
+    ewma_params: FrozenDict
+    total_weight: chex.Array
+
+
 class OptStates(NamedTuple):
     """OptStates of actor critic learner."""
 
@@ -121,6 +130,15 @@ class LearnerState(NamedTuple):
     """State of the learner."""
 
     params: Params
+    opt_states: OptStates
+    key: chex.PRNGKey
+    env_state: LogEnvState
+    timestep: TimeStep
+
+class EwmaLearnerState(NamedTuple):
+    """State of the EWMA learner."""
+
+    params: EwmaParams
     opt_states: OptStates
     key: chex.PRNGKey
     env_state: LogEnvState
@@ -161,7 +179,7 @@ class RNNEvalState(NamedTuple):
     return_: chex.Numeric
 
 
-MavaState = TypeVar("MavaState", LearnerState, RNNLearnerState, EvalState, RNNEvalState)
+MavaState = TypeVar("MavaState", LearnerState, RNNLearnerState, EvalState, RNNEvalState, EwmaLearnerState)
 
 
 class ExperimentOutput(NamedTuple, Generic[MavaState]):
