@@ -522,7 +522,12 @@ def run_experiment(_config: Dict) -> None:
     # Calculate total timesteps.
     n_devices = len(jax.devices())
     config["arch"]["devices"] = jax.devices()
-
+    config["system"]["num_updates"] = int(config ["system"]["total_timesteps"] 
+        / n_devices
+        / config["system"]["rollout_length"]
+        / config["system"]["update_batch_size"]
+        / config["arch"]["num_envs"]
+    )
     config["system"]["num_updates_per_eval"] = (
         config["system"]["num_updates"] // config["arch"]["num_evaluation"]
     )
@@ -533,7 +538,7 @@ def run_experiment(_config: Dict) -> None:
         * config["system"]["update_batch_size"]
         * config["arch"]["num_envs"]
     )
-    # Get total_timesteps
+    # Recalculate the true number of total timesteps for incase of calculation round off
     config["system"]["total_timesteps"] = (
         n_devices
         * config["system"]["num_updates"]
