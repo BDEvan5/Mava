@@ -12,14 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# import os
-# import multiprocessing
-
-# os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count={}".format(
-#     4
-#     # multiprocessing.cpu_count()
-# )
-
 import copy
 import time
 from typing import Any, Dict, Sequence, Tuple
@@ -50,7 +42,6 @@ from mava.types import (
     LearnerFn,
     EwmaLearnerState,
     Observation,
-    ObservationGlobalState,
     OptStates,
     EwmaParams,
     PPOTransition,
@@ -59,7 +50,6 @@ from mava.utils.checkpointing import Checkpointer
 from mava.utils.jax import merge_leading_dims
 from mava.utils.make_env import make
 
-print(f"Devices: {jax.devices()}")
 
 class Actor(nn.Module):
     """Actor Network."""
@@ -95,11 +85,11 @@ class Critic(nn.Module):
     """Critic Network."""
 
     @nn.compact
-    def __call__(self, observation: ObservationGlobalState) -> chex.Array:
+    def __call__(self, observation: Observation) -> chex.Array:
         """Forward pass."""
 
         critic_output = nn.Dense(128, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(
-            observation.global_state
+            observation.agents_view
         )
         critic_output = nn.relu(critic_output)
         critic_output = nn.Dense(128, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(
@@ -121,7 +111,7 @@ def get_learner_fn(
 ) -> LearnerFn[EwmaLearnerState]:
     """Get the learner function."""
 
-    # Unpack apply and update functions.
+    # Get apply and update functions for actor and critic networks.
     actor_apply_fn, critic_apply_fn = apply_fns
     actor_update_fn, critic_update_fn = update_fns
 
@@ -223,7 +213,7 @@ def get_learner_fn(
                 params, opt_states = train_state
                 traj_batch, advantages, targets = batch_info
 
-                def _actor_loss_fn( #TODO: come back here....
+                def _actor_loss_fn(
                     actor_params: FrozenDict,
                     ewma_params: FrozenDict,
                     actor_opt_state: OptState,
@@ -239,7 +229,7 @@ def get_learner_fn(
 
                     # CALCULATE ACTOR LOSS
                     ratio = jnp.exp(log_prob - proximal_log_prob) # pi/proximal
-                    gae = (gae - gae.mean()) / (gae.std() + 1e-8) # TODO: I think this must be adjusted
+                    gae = (gae - gae.mean()) / (gae.std() + 1e-8)
                     loss_actor1 = ratio * gae
                     loss_actor2 = (
                         jnp.clip(
@@ -282,7 +272,7 @@ def get_learner_fn(
                 actor_grad_fn = jax.value_and_grad(_actor_loss_fn, has_aux=True)
                 actor_loss_info, actor_grads = actor_grad_fn(
                     params.actor_params, params.ewma_params, opt_states.actor_opt_state, traj_batch, advantages
-                ) # add in ewma params
+                )
 
                 # CALCULATE CRITIC LOSS
                 critic_grad_fn = jax.value_and_grad(_critic_loss_fn, has_aux=True)
@@ -322,7 +312,7 @@ def get_learner_fn(
                 )
                 critic_new_params = optax.apply_updates(params.critic_params, critic_updates)
 
-                # update the EWMA params and total weight 
+               # update the EWMA params and total weight 
                 # See Appendix A in original paper for details
                 ewma_decay = config["system"]["ewma_decay"]
                 new_weight = 1 + params.total_weight * ewma_decay
@@ -396,7 +386,7 @@ def get_learner_fn(
         Args:
             learner_state (NamedTuple):
                 - params (Params): The initial model parameters.
-                - opt_states (OptStates): The initial optimizer states.
+                - opt_states (OptStates): The initial optimizer state.
                 - rng (chex.PRNGKey): The random number generator state.
                 - env_state (LogEnvState): The environment state.
                 - timesteps (TimeStep): The initial timestep in the initial trajectory.
@@ -448,15 +438,9 @@ def learner_setup(
         optax.adam(config["system"]["critic_lr"], eps=1e-5),
     )
 
-    # Initialise observation.
-    obs = env.observation_spec().generate_value()
-    # Select only obs for a single agent.
-    init_x = ObservationGlobalState(
-        agents_view=obs.agents_view[0],
-        action_mask=obs.action_mask[0],
-        global_state=obs.global_state[0],
-        step_count=obs.step_count[0],
-    )
+    # Initialise observation: Select only obs for a single agent.
+    init_x = env.observation_spec().generate_value()
+    init_x = jax.tree_util.tree_map(lambda x: x[0], init_x)
     init_x = jax.tree_util.tree_map(lambda x: x[None, ...], init_x)
 
     # Initialise actor params and optimiser state.
@@ -501,6 +485,7 @@ def learner_setup(
     critic_opt_state = jax.tree_map(broadcast, critic_opt_state)
     ewma_params = jax.tree_map(broadcast, ewma_params) # broadcast the ewma params
     total_weight = jax.tree_map(broadcast, total_weight) # broadcast the ewma params
+
 
     # Initialise environment states and timesteps.
     rng, *env_rngs = jax.random.split(
@@ -611,6 +596,7 @@ def run_experiment(_config: Dict) -> None:
     for i in range(config["arch"]["num_evaluation"]):
         # Train.
         start_time = time.time()
+
         learner_output = learn(learner_state)
         jax.block_until_ready(learner_output)
 
@@ -681,7 +667,7 @@ def run_experiment(_config: Dict) -> None:
         )
 
 
-@hydra.main(config_path="../configs", config_name="default_ff_mappo_ewma.yaml", version_base="1.2")
+@hydra.main(config_path="../configs", config_name="default_ff_ippo_ewma.yaml", version_base="1.2")
 def hydra_entry_point(cfg: DictConfig) -> None:
     """Experiment entry point."""
     # Convert config to python dict.
@@ -690,7 +676,7 @@ def hydra_entry_point(cfg: DictConfig) -> None:
     # Run experiment.
     run_experiment(cfg)
 
-    print(f"{Fore.CYAN}{Style.BRIGHT}MAPPO_ewma experiment completed{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}{Style.BRIGHT}IPPO_ewma experiment completed{Style.RESET_ALL}")
 
 
 if __name__ == "__main__":

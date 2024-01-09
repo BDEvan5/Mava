@@ -1,0 +1,5 @@
+defaults:
+  - logger: ff_ippo_ewma
+  - arch: anakin
+  - system: ff_ippo_ewma
+  - env: smax
