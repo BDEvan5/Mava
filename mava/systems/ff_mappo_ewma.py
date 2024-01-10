@@ -52,14 +52,13 @@ from mava.types import (
     Observation,
     ObservationGlobalState,
     OptStates,
-    EwmaParams,
+    EwmaParams, # UPDATE: add in the EWMA params
     PPOTransition,
 )
 from mava.utils.checkpointing import Checkpointer
 from mava.utils.jax import merge_leading_dims
 from mava.utils.make_env import make
 
-print(f"Devices: {jax.devices()}")
 
 class Actor(nn.Module):
     """Actor Network."""
@@ -234,12 +233,15 @@ def get_learner_fn(
                     # RERUN NETWORK
                     actor_policy = actor_apply_fn(actor_params, traj_batch.obs)
                     log_prob = actor_policy.log_prob(traj_batch.action)
+                    # =========================================================
+
+                    # use the EWMA params to calculate the proximal policy logits
                     proximal_policy = actor_apply_fn(ewma_params, traj_batch.obs)
-                    proximal_log_prob = proximal_policy.log_prob(traj_batch.action)
+                    proximal_log_prob = proximal_policy.log_prob(traj_batch.action) 
 
                     # CALCULATE ACTOR LOSS
-                    ratio = jnp.exp(log_prob - proximal_log_prob) # pi/proximal
-                    gae = (gae - gae.mean()) / (gae.std() + 1e-8) # TODO: this need adjustment
+                    ratio = jnp.exp(log_prob - proximal_log_prob) # pi/proximal - new surrogate
+                    gae = (gae - gae.mean()) / (gae.std() + 1e-8) # TODO: adjust the advantage normalisation using c
                     loss_actor1 = ratio * gae
                     loss_actor2 = (
                         jnp.clip(
@@ -250,7 +252,10 @@ def get_learner_fn(
                         * gae
                     )
                     loss_actor = -jnp.minimum(loss_actor1, loss_actor2)
-                    loss_actor = loss_actor * jnp.exp(proximal_log_prob - traj_batch.log_prob) # multiply by the ratio of proximal/behavioural
+                    # multiply by the ratio of proximal/behavioural
+                    loss_actor = loss_actor * jnp.exp(proximal_log_prob - traj_batch.log_prob) 
+                    # =========================================================
+
                     loss_actor = loss_actor.mean()
                     entropy = actor_policy.entropy().mean()
 
@@ -322,6 +327,7 @@ def get_learner_fn(
                 )
                 critic_new_params = optax.apply_updates(params.critic_params, critic_updates)
 
+                # =========================================================
                 # update the EWMA params and total weight 
                 # See Appendix A in original paper for details
                 ewma_decay = config["system"]["ewma_decay"]
@@ -335,6 +341,7 @@ def get_learner_fn(
                 # PACK NEW PARAMS AND OPTIMISER STATE
                 new_params = EwmaParams(actor_new_params, critic_new_params, ewma_new_params, new_weight)
                 new_opt_state = OptStates(actor_new_opt_state, critic_new_opt_state)
+                # =========================================================
 
                 # PACK LOSS INFO
                 total_loss = actor_loss_info[0] + critic_loss_info[0]
@@ -467,9 +474,12 @@ def learner_setup(
     critic_params = critic_network.init(rng_p, init_x)
     critic_opt_state = critic_optim.init(critic_params)
 
+    # =========================================================
     # Initialise the EWMA params; no optimiser state required
     ewma_params = copy.deepcopy(actor_params)
     total_weight = jnp.ones(1)
+    # =========================================================
+
 
     # Vmap network apply function over number of agents.
     vmapped_actor_network_apply_fn = jax.vmap(
@@ -499,8 +509,12 @@ def learner_setup(
     actor_opt_state = jax.tree_map(broadcast, actor_opt_state)
     critic_params = jax.tree_map(broadcast, critic_params)
     critic_opt_state = jax.tree_map(broadcast, critic_opt_state)
+    
+    # =========================================================
     ewma_params = jax.tree_map(broadcast, ewma_params) # broadcast the ewma params
     total_weight = jax.tree_map(broadcast, total_weight) # broadcast the ewma params
+    # =========================================================
+
 
     # Initialise environment states and timesteps.
     rng, *env_rngs = jax.random.split(
@@ -524,8 +538,10 @@ def learner_setup(
     env_states = jax.tree_util.tree_map(reshape_states, env_states)
     timesteps = jax.tree_util.tree_map(reshape_states, timesteps)
 
+    # =========================================================
     params = EwmaParams(actor_params, critic_params, ewma_params, total_weight)
     opt_states = OptStates(actor_opt_state, critic_opt_state)
+    # =========================================================
 
     init_learner_state = EwmaLearnerState(params, opt_states, step_rngs, env_states, timesteps)
     return learn, actor_network, init_learner_state

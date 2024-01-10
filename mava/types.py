@@ -102,14 +102,15 @@ class Params(NamedTuple):
     actor_params: FrozenDict
     critic_params: FrozenDict
 
-
+# =========================================================
 class EwmaParams(NamedTuple):
     """Parameters of an actor critic network. Includes the EWMA parameters and the total weight used in the update."""
 
     actor_params: FrozenDict
     critic_params: FrozenDict
-    ewma_params: FrozenDict
+    ewma_params: FrozenDict # include the ewma parameters and total weight 
     total_weight: chex.Array
+# =========================================================
 
 
 class OptStates(NamedTuple):
@@ -135,6 +136,7 @@ class LearnerState(NamedTuple):
     env_state: LogEnvState
     timestep: TimeStep
 
+# =========================================================
 class EwmaLearnerState(NamedTuple):
     """State of the EWMA learner."""
 
@@ -143,6 +145,7 @@ class EwmaLearnerState(NamedTuple):
     key: chex.PRNGKey
     env_state: LogEnvState
     timestep: TimeStep
+# =========================================================
 
 
 class RNNLearnerState(NamedTuple):
