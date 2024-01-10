@@ -239,7 +239,7 @@ def get_learner_fn(
 
                     # CALCULATE ACTOR LOSS
                     ratio = jnp.exp(log_prob - proximal_log_prob) # pi/proximal
-                    gae = (gae - gae.mean()) / (gae.std() + 1e-8) # TODO: I think this must be adjusted
+                    gae = (gae - gae.mean()) / (gae.std() + 1e-8) # TODO: this need adjustment
                     loss_actor1 = ratio * gae
                     loss_actor2 = (
                         jnp.clip(
